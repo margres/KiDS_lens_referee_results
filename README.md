@@ -8,8 +8,8 @@ arc-level signal-to-noise, derived from a full lens+mass+source model fit.
 107-object sample (a stale early-draft candidate list, `targets.csv`, that
 had since been superseded). That content is kept for reference under
 `archive_2026-07-28_wrong_sample/` — the fix methodology in it (mask-radius
-bug, etc.) is still valid, just applied to the wrong objects. Everything at
-the top level now is against the correct, current target set.
+bug, etc.) is still valid, just applied to the wrong objects. Everything
+below is against the correct, current target set.
 
 ## Method
 
@@ -18,7 +18,20 @@ Each lens is fit with [PyAutoLens](https://github.com/PyAutoLabs/PyAutoLens)
 source — via `af.Nautilus` nested sampling. Arc S/N is computed from the
 lens-light-subtracted image in an annulus around the Einstein radius (not
 the full residual, so source-model quality doesn't directly bias it — see
-`code/NOTES_ring_residual_issue.md`).
+`r_only/code/NOTES_ring_residual_issue.md`).
+
+Two parallel fit tracks, kept in separate top-level folders:
+- **`r_only/`** — single-band (KiDS r) fits. Primary/most complete track.
+- **`ugri/`** — multi-band (r+g+i jointly, u excluded as too noisy — KiDS u
+  is the shallowest of the four bands by survey design and mostly dilutes
+  a joint fit rather than constraining it) fits. Color helps separate
+  lens/source/interloper light more robustly than single-band mask/prior
+  tweaks alone — motivated directly by streak-type failures documented in
+  `r_only/code/NOTES_ring_residual_issue.md`. Uses PyAutoLens's official
+  multi-wavelength API (`af.AnalysisFactor` + `af.FactorGraphModel`): one
+  shared lens+source model posterior across bands, not independent
+  per-band fits. In progress — g/u/i tile downloads were still running as
+  of this push, fits not yet started.
 
 ## Target set (223 unique objects)
 
@@ -28,8 +41,7 @@ the full residual, so source-model quality doesn't directly bias it — see
 - **140 new grade A/B discoveries** from this work's own AL/NN search
   (`reference_csvs/KiDS_SGL_candidates.csv`, `Grade` column; 1032 grade-C
   candidates also in that file are not being fit).
-- 24 objects overlap (re-discoveries), giving 223 unique cutouts in
-  `fits_cutouts/`.
+- 24 objects overlap (re-discoveries), giving 223 unique cutouts.
 
 ## Recovered vs. missed (the actual referee question)
 
@@ -49,37 +61,45 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
 
 ## Contents
 
-- `code/` — `fit_lens_model.py` (main parametric fit),
+- `r_only/code/` — `fit_lens_model.py` (main parametric fit),
   `fit_lens_model_pixelized.py` (in-progress pixelized-source variant for
-  ring-residual objects), `slurm/array_all_AB.sbatch` (the array-job
-  template used to fit the 223-object set), `NOTES_ring_residual_issue.md`.
-- `fits_cutouts/` — 151x151px KiDS DR4 r-band cutouts (~0.214"/px) for all
-  223 known+new grade A/B objects.
-- `results/` — per-object `.json` fit summaries, for whichever objects have
-  completed so far (see Status — this is a partial set, updated as the
-  cluster job progresses).
+  ring-residual objects), `array_all_AB.sbatch`, `NOTES_ring_residual_issue.md`.
+- `r_only/fits_cutouts/` — 151x151px KiDS DR4 r-band cutouts (~0.214"/px)
+  for all 223 known+new grade A/B objects.
+- `r_only/results/` — per-object `.json` fit summaries, partial set,
+  updated as the cluster job progresses (see Status).
+- `r_only/residual_images/` — diagnostic residual-map grids.
+- `ugri/code/` — `fetch_multiband_cutouts.py`, `fit_lens_model_multiband.py`,
+  `array_multiband.sbatch`.
+- `ugri/results/` — multi-band fit summaries, not yet populated (see Status).
 - `reference_csvs/` — the known-lens ground truth, the candidate list, and
-  the recovered-vs-missed breakdown.
+  the recovered-vs-missed breakdown (shared by both tracks).
 - `archive_2026-07-28_wrong_sample/` — the earlier (wrong-sample) push,
   kept for reference.
 
 ## Status (as of this push)
 
-**16 / 223 objects fit so far** — a cluster array job (223 tasks, 20
-concurrent) is running to fit the rest. This repo will be updated as it
-progresses.
+**r-only: 78 / 223 objects fit so far** — a cluster array job (223 tasks,
+20 concurrent, though cluster contention has kept actual concurrency lower)
+is running to fit the rest.
 
-Known open issues in the fitting pipeline (methodology, not sample-specific
-— see `code/NOTES_ring_residual_issue.md` for detail):
+**ugri: 0 / 223 fit yet.** g/u/i-band tile fetch in progress (g band first,
+then u, then i). A dependent SLURM job is queued to auto-start the
+multi-band fit the moment the fetch completes — no manual trigger needed.
+
+Known open issues in the r-only fitting pipeline (methodology, not
+sample-specific — see `r_only/code/NOTES_ring_residual_issue.md` for
+detail), relevant background for the multi-band effort too:
 - A mask-radius bug that caused streak-shaped unphysical fits and
   12h-wall-clock non-convergence hangs on some objects — **fixed** (mask
-  tightened from ~14.5" to a fixed 7").
-- A separate, still-unresolved intermittent silent deadlock in the
-  nested-sampling stage (not caused by the mask bug, not yet root-caused)
-  affects a small fraction of fits; those are retried.
+  tightened from ~14.5" to a fixed 7"), though at least one object
+  (J085156) still streaks even at 7" — the interloper is closer than that.
+- A separate, likely-root-caused (corrupted HDF5 nested-sampling checkpoint,
+  probably an NFS file-locking issue) intermittent hang affects a small
+  fraction of fits; those are cleared and retried.
 - A subset of objects show a genuine concentric ring-shaped residual a
   single Sersic-core source profile can't represent (real source
-  complexity, not a bug) — a pixelized-source reconstruction is in
-  progress for these.
+  complexity, not a bug) — a pixelized-source reconstruction
+  (`r_only/code/fit_lens_model_pixelized.py`) is in progress for these.
 
 This is in-progress work, not a final/published result set.
