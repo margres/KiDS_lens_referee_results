@@ -1,0 +1,11 @@
+{
+  "ID": "KiDSDR4_J122246.482+004805.54",
+  "time_s": 1693.299723625183,
+  "einstein_radius": 0.8040057668922478,
+  "snr_arc_model": 16.66308774129234,
+  "snr_arc_peak": 16.351053092446154,
+  "chi2_per_pix": 1.4082295185161324,
+  "log_likelihood": 32158.33000850516,
+  "source_effective_radius": 0.11839742642065122,
+  "source_re_max": 30.0
+}
