@@ -69,6 +69,11 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
 - `r_only/results/` — per-object `.json` fit summaries, partial set,
   updated as the cluster job progresses (see Status).
 - `r_only/residual_images/` — diagnostic residual-map grids.
+- `r_only/per_lens_diagnostics/<ID>.png` — one 4-panel figure per fit
+  lens: observed data, model reconstruction, normalized residual, and the
+  source-plane (de-lensed) reconstruction, all image-plane panels on the
+  same flux scale. 198/223 present (all lenses with a completed fit as of
+  this push).
 - `ugri/code/` — `fetch_multiband_cutouts.py`, `fit_lens_model_multiband.py`,
   `array_multiband.sbatch`.
 - `ugri/results/` — multi-band fit summaries, not yet populated (see Status).
