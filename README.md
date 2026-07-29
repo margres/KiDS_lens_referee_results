@@ -6,10 +6,10 @@ arc-level signal-to-noise, derived from a full lens+mass+source model fit.
 
 **2026-07-28 correction:** an earlier version of this repo fit the wrong
 107-object sample (a stale early-draft candidate list, `targets.csv`, that
-had since been superseded). That content is kept for reference under
-`archive_2026-07-28_wrong_sample/` — the fix methodology in it (mask-radius
-bug, etc.) is still valid, just applied to the wrong objects. Everything
-below is against the correct, current target set.
+had since been superseded) — the fix methodology (mask-radius bug, etc.)
+was still valid, just applied to the wrong objects. That earlier push has
+since been removed (still recoverable from git history if ever needed).
+Everything below is against the correct, current target set.
 
 ## Method
 
@@ -90,8 +90,6 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
 - `ugri/results/` — multi-band fit summaries, not yet populated (see Status).
 - `reference_csvs/` — the known-lens ground truth, the candidate list, and
   the recovered-vs-missed breakdown (shared by both tracks).
-- `archive_2026-07-28_wrong_sample/` — the earlier (wrong-sample) push,
-  kept for reference.
 
 ## Status (as of this push)
 
