@@ -113,9 +113,19 @@ detail), relevant background for the multi-band effort too:
   12h-wall-clock non-convergence hangs on some objects — **fixed** (mask
   tightened from ~14.5" to a fixed 7"), though at least one object
   (J085156) still streaks even at 7" — the interloper is closer than that.
-- A separate, likely-root-caused (corrupted HDF5 nested-sampling checkpoint,
-  probably an NFS file-locking issue) intermittent hang affects a small
-  fraction of fits; those are cleared and retried.
+- A separate intermittent silent deadlock (nested-sampling stage hangs
+  with zero progress, no error) affects a small fraction of fits; those
+  are cleared and retried. **Root cause still open as of 2026-07-29**: a
+  distinct corrupted-HDF5-checkpoint bug was found and is understood
+  (crashes fast with `OSError: bad object header version number`, unlike
+  this one), but the silent hang itself was reproduced on a fresh GPU venv
+  (`kids_lens_gpu`, Python 3.11 + JAX CUDA, built to test whether GPU
+  acceleration helps) too — same log signature, and `nvidia-smi` during
+  the hang showed 0% GPU utilization / idle power draw, confirming a
+  genuine stall (waiting on something) rather than a slow computation.
+  Not backend- or node-specific. Needs a debugger/py-spy attached to a
+  live hung process to find the actual mechanism; log-watching alone
+  hasn't found it despite repeated attempts.
 - A subset of objects show a genuine concentric ring-shaped residual a
   single Sersic-core source profile can't represent (real source
   complexity, not a bug) — a pixelized-source reconstruction
