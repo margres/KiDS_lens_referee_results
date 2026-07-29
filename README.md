@@ -66,14 +66,25 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
   ring-residual objects), `array_all_AB.sbatch`, `NOTES_ring_residual_issue.md`.
 - `r_only/fits_cutouts/` — 151x151px KiDS DR4 r-band cutouts (~0.214"/px)
   for all 223 known+new grade A/B objects.
-- `r_only/results/` — per-object `.json` fit summaries, partial set,
-  updated as the cluster job progresses (see Status).
+- `r_only/results/` — per-object `.json` fit summaries (point estimates),
+  partial set, updated as the cluster job progresses (see Status). Also
+  `parameter_uncertainties.csv` — 3-sigma error bars on `einstein_radius`
+  and `source_effective_radius` per lens (pulled from PyAutoFit's
+  posterior, `errors_at_sigma_3` in each object's internal
+  `samples_summary.json` — not otherwise exposed anywhere else in this
+  repo; the per-object `.json` files are point estimates only).
 - `r_only/residual_images/` — diagnostic residual-map grids.
 - `r_only/per_lens_diagnostics/<ID>.png` — one 4-panel figure per fit
   lens: observed data, model reconstruction, normalized residual, and the
   source-plane (de-lensed) reconstruction, all image-plane panels on the
   same flux scale. 198/223 present (all lenses with a completed fit as of
   this push).
+- `r_only/raw_fits/<ID>_fit.fits` (MASK/MODEL_DATA/RESIDUAL_MAP/
+  NORMALIZED_RESIDUAL_MAP/CHI_SQUARED_MAP extensions) and
+  `<ID>_source_plane.fits` (MASK/SOURCE_PLANE_IMAGE_1) — the raw data
+  behind `per_lens_diagnostics/`, for anyone who wants their own plots or
+  to pull numbers directly rather than being stuck with the PNG rendering.
+  198/223 present.
 - `ugri/code/` — `fetch_multiband_cutouts.py`, `fit_lens_model_multiband.py`,
   `array_multiband.sbatch`.
 - `ugri/results/` — multi-band fit summaries, not yet populated (see Status).
