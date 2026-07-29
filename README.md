@@ -99,12 +99,23 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
 remain, including a handful stuck in an intermittent silent
 nested-sampling deadlock (being retried).
 
-**ugri: 0 / 223 fit yet.** g-band fetch complete, u in progress, i not yet
-started (first fetch attempt hit an 8h timeout mid-g-band — per-tile time
-for these full-coadd files is much longer than the r-band cutout tiles;
-resubmitted with a 48h budget, resuming from cache). A dependent SLURM job
-is queued to auto-start the multi-band fit the moment the fetch completes
-— no manual trigger needed.
+**ugri: paused, 0 / 223 fit.** g/u/i fetch completed successfully (all 223
+targets have g+r+i cutouts now). But the fit itself hit a real performance
+problem, diagnosed and the job killed 2026-07-29: `af.FactorGraphModel`/
+`af.AnalysisFactor` (the official PyAutoLens multi-wavelength API used in
+`ugri/code/fit_lens_model_multiband.py`) appears not to be JAX-vmap-
+compatible — production single-band fits do ~200-300k likelihood calls in
+~25min via batched JAX evaluation, but the multiband factor-graph path
+managed only ~900 calls in 4.5h (confirmed via a standalone timing script:
+a single warmed-up likelihood call takes ~1s through the factor graph vs.
+the ~7ms/call the batched single-band path achieves — not a "3 bands = 3x
+slower" problem, a ~1000x one). Checked and ruled out a simpler
+explanation first (parameter-count blowup from `model.copy()` not sharing
+priors across bands) before concluding it's the vmap fallback.
+**Deprioritized** until this is fixed — either find why the factor graph
+breaks vmap, or rewrite as a single custom `Analysis` that sums chi-squared
+across bands directly (bypassing `AnalysisFactor` entirely). r-only remains
+the primary track in the meantime.
 
 Known open issues in the r-only fitting pipeline (methodology, not
 sample-specific — see `r_only/code/NOTES_ring_residual_issue.md` for
