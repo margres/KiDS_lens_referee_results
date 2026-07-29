@@ -79,13 +79,18 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
 
 ## Status (as of this push)
 
-**r-only: 78 / 223 objects fit so far** — a cluster array job (223 tasks,
-20 concurrent, though cluster contention has kept actual concurrency lower)
-is running to fit the rest.
+**r-only: 198 / 223 objects fit so far** (90/107 known lenses covered),
+**177 clean (chi2/pix<=5), 21 elevated** — see
+`r_only/residual_images/worst20_by_chi2_2026-07-29.png`. 25 objects
+remain, including a handful stuck in an intermittent silent
+nested-sampling deadlock (being retried).
 
-**ugri: 0 / 223 fit yet.** g/u/i-band tile fetch in progress (g band first,
-then u, then i). A dependent SLURM job is queued to auto-start the
-multi-band fit the moment the fetch completes — no manual trigger needed.
+**ugri: 0 / 223 fit yet.** g-band fetch complete, u in progress, i not yet
+started (first fetch attempt hit an 8h timeout mid-g-band — per-tile time
+for these full-coadd files is much longer than the r-band cutout tiles;
+resubmitted with a 48h budget, resuming from cache). A dependent SLURM job
+is queued to auto-start the multi-band fit the moment the fetch completes
+— no manual trigger needed.
 
 Known open issues in the r-only fitting pipeline (methodology, not
 sample-specific — see `r_only/code/NOTES_ring_residual_issue.md` for
