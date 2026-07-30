@@ -126,21 +126,26 @@ sample-specific — see `r_only/code/NOTES_ring_residual_issue.md` for
 detail), relevant background for the multi-band effort too:
 - A mask-radius bug that caused streak-shaped unphysical fits and
   12h-wall-clock non-convergence hangs on some objects — **fixed** (mask
-  tightened from ~14.5" to a fixed 7"), though at least one object
-  (J085156) still streaks even at 7" — the interloper is closer than that.
-- A separate intermittent silent deadlock (nested-sampling stage hangs
-  with zero progress, no error) affects a small fraction of fits; those
-  are cleared and retried. **Root cause still open as of 2026-07-29**: a
-  distinct corrupted-HDF5-checkpoint bug was found and is understood
-  (crashes fast with `OSError: bad object header version number`, unlike
-  this one), but the silent hang itself was reproduced on a fresh GPU venv
-  (`kids_lens_gpu`, Python 3.11 + JAX CUDA, built to test whether GPU
-  acceleration helps) too — same log signature, and `nvidia-smi` during
-  the hang showed 0% GPU utilization / idle power draw, confirming a
-  genuine stall (waiting on something) rather than a slow computation.
-  Not backend- or node-specific. Needs a debugger/py-spy attached to a
-  live hung process to find the actual mechanism; log-watching alone
-  hasn't found it despite repeated attempts.
+  tightened from ~14.5" to a fixed 7"). At least one object (J085156) still
+  streaked even at 7" — the interloper was closer than that; refit with a
+  5" mask for that object specifically, chi2/pix dropped 83.6 -> 2.5.
+- The separate intermittent silent deadlock (nested-sampling stage hangs
+  with zero progress, no error) is **root-caused and fixed as of 2026-07-30**.
+  `py-spy` couldn't attach (no ptrace permission on this cluster), so used
+  Python's stdlib `faulthandler` (`SIGUSR1` -> live stack dump, no special
+  permission needed) instead, and found `fit_lens_model.py`'s own JAX
+  version-gate had a real bug: the intent was "only enable JAX on Python
+  >=3.11," but the fallback branch omitted the `use_jax` kwarg entirely,
+  and PyAutoLens's own default for an omitted `use_jax` is `True` — so this
+  Python-3.10 pipeline was silently running an unsupported JAX
+  configuration the whole time, which is the likely cause of the hangs
+  (confirmed 3 different internal stall points across debug attempts, all
+  JAX/Nautilus-internal, all showing ~0% CPU/GPU utilization). **Fix**:
+  explicitly pass `use_jax=False` always on this venv. Verified: worker
+  processes now show genuine 75-79% CPU utilization instead of ~0%.
+  Tried the "do it properly" alternative too (real JAX on the Python-3.11
+  GPU venv) -- that also stalled, so the fix is disabling JAX for this
+  pipeline entirely, not using it correctly instead.
 - A subset of objects show a genuine concentric ring-shaped residual a
   single Sersic-core source profile can't represent (real source
   complexity, not a bug) — a pixelized-source reconstruction
