@@ -93,8 +93,8 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
 
 ## Status (as of this push)
 
-**r-only: 198 / 223 objects fit so far** (90/107 known lenses covered),
-**177 clean (chi2/pix<=5), 21 elevated** — see
+**r-only: 202 / 223 objects fit so far** (92/107 known lenses covered),
+**180 clean (chi2/pix<=5), 22 elevated** — see
 `r_only/residual_images/worst20_by_chi2_2026-07-29.png`. 25 objects
 remain, including a handful stuck in an intermittent silent
 nested-sampling deadlock (being retried).
