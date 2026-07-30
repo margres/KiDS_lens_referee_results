@@ -73,12 +73,16 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
   posterior, `errors_at_sigma_3` in each object's internal
   `samples_summary.json` — not otherwise exposed anywhere else in this
   repo; the per-object `.json` files are point estimates only).
-- `r_only/residual_images/` — diagnostic residual-map grids.
-- `r_only/per_lens_diagnostics/<ID>.png` — one 4-panel figure per fit
-  lens: observed data, model reconstruction, normalized residual, and the
-  source-plane (de-lensed) reconstruction, all image-plane panels on the
-  same flux scale. 198/223 present (all lenses with a completed fit as of
-  this push).
+- `r_only/residual_images/` — diagnostic residual-map grids, including
+  `all_lenses_full_diagnostic_combined.png` — every fit lens's data/model/
+  residual/source-plane panels stacked into one single (very tall) image,
+  row order matching `all_202_id_chi2_mapping.txt`'s numbering.
+- `r_only/per_lens_diagnostics/<NNN>_<ID>.png` — one 4-panel figure per
+  fit lens (same 4 panels as above): observed data, model reconstruction,
+  normalized residual, and the source-plane (de-lensed) reconstruction,
+  all image-plane panels on the same flux scale. Filename-prefixed with
+  the same grid number used in the residual-grid images, so you can cross
+  -reference a flagged number back to its individual file. 202/223 present.
 - `r_only/raw_fits/<ID>_fit.fits` (MASK/MODEL_DATA/RESIDUAL_MAP/
   NORMALIZED_RESIDUAL_MAP/CHI_SQUARED_MAP extensions) and
   `<ID>_source_plane.fits` (MASK/SOURCE_PLANE_IMAGE_1) — the raw data
