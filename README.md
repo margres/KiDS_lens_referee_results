@@ -91,64 +91,78 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
   198/223 present.
 - `ugri/code/` — `fetch_multiband_cutouts.py`, `fit_lens_model_multiband.py`,
   `array_multiband.sbatch`.
-- `ugri/results/` — multi-band fit summaries, not yet populated (see Status).
+- `ugri/results/` — multi-band fit summaries, 199/223 present (see Status).
 - `reference_csvs/` — the known-lens ground truth, the candidate list, and
   the recovered-vs-missed breakdown (shared by both tracks).
 
 ## Status (as of this push)
 
-**r-only: 202 / 223 objects fit so far** (92/107 known lenses covered),
-**180 clean (chi2/pix<=5), 22 elevated** — see
-`r_only/residual_images/worst20_by_chi2_2026-07-29.png`. 25 objects
-remain, including a handful stuck in an intermittent silent
-nested-sampling deadlock (being retried).
+**r-only: 203 / 223 objects fit so far** (92/107 known lenses covered).
+20 objects remain; a backfill batch for these is running now.
 
-**ugri: paused, 0 / 223 fit.** g/u/i fetch completed successfully (all 223
-targets have g+r+i cutouts now). But the fit itself hit a real performance
-problem, diagnosed and the job killed 2026-07-29: `af.FactorGraphModel`/
-`af.AnalysisFactor` (the official PyAutoLens multi-wavelength API used in
-`ugri/code/fit_lens_model_multiband.py`) appears not to be JAX-vmap-
-compatible — production single-band fits do ~200-300k likelihood calls in
-~25min via batched JAX evaluation, but the multiband factor-graph path
-managed only ~900 calls in 4.5h (confirmed via a standalone timing script:
-a single warmed-up likelihood call takes ~1s through the factor graph vs.
-the ~7ms/call the batched single-band path achieves — not a "3 bands = 3x
-slower" problem, a ~1000x one). Checked and ruled out a simpler
-explanation first (parameter-count blowup from `model.copy()` not sharing
-priors across bands) before concluding it's the vmap fallback.
-**Deprioritized** until this is fixed — either find why the factor graph
-breaks vmap, or rewrite as a single custom `Analysis` that sums chi-squared
-across bands directly (bypassing `AnalysisFactor` entirely). r-only remains
-the primary track in the meantime.
+**ugri: 199 / 223 objects fit** (94/107 known lenses covered) — **up from
+0/223 at the last push.** The multiband track was not actually blocked by
+a JAX-vmap incompatibility as previously believed (see below) — once the
+real root cause was found and fixed, a full r+g+i joint fit dropped from
+"doesn't converge in days" to **~26 minutes/object**, using the same
+`number_of_cores=8` as the single-band pipeline (no extra CPU scaling
+needed). 24 objects remain, running now.
 
-Known open issues in the r-only fitting pipeline (methodology, not
+**Root cause found 2026-07-30/31, and it explains BOTH the r-only silent
+deadlock AND the multiband slowdown as the same bug**, not two separate
+problems: `fit_lens_model.py`'s (and `fit_lens_model_multiband.py`'s)
+version-gate for JAX was silently broken. Intent was "only enable JAX on
+Python >=3.11 with jax importable, else run without it" — but the fallback
+branch omitted the `use_jax` kwarg to `al.AnalysisImaging` entirely, and
+PyAutoLens's own default when that kwarg is omitted is `True`. So this
+Python-3.10 pipeline was silently running an unsupported JAX configuration
+the whole time. `py-spy` couldn't attach (no ptrace permission on this
+cluster), so used Python's stdlib `faulthandler` (`SIGUSR1` -> live stack
+dump) instead to catch it stuck inside JAX/Nautilus-internal code showing
+~0% CPU/GPU utilization. **Fix**: always explicitly pass
+`use_jax=_use_jax` (never omit the kwarg). Verified via direct worker
+`ps aux` inspection: genuine 75-79% CPU utilization across all 8 workers,
+instead of ~0%. Tried the "do it properly" alternative too (real JAX on a
+Python-3.11 GPU venv) — that also stalled, so the fix is disabling JAX for
+this pipeline entirely, not using it correctly instead. All the earlier
+24-core/60-core/100GB-memory scaling attempts for multiband
+(`test_multiband_60cpu.sbatch` etc.) were solving the wrong problem and
+are now obsolete — 8 cores was always enough once JAX was off.
+
+A second, separate, upstream Nautilus bug also affects a handful of
+objects across both tracks: `numpy.linalg.LinAlgError: Singular matrix`
+inside Nautilus's own ellipsoid bound-fitting code
+(`nautilus/bounds/basic.py:minimum_volume_enclosing_ellipsoid`) — a known,
+previously-reported, not-fully-closed issue upstream (nautilus-sampler
+issues #34/#35). No pip upgrade or config knob avoids it; the maintainer's
+own advice is to retry with a different random seed. **Mitigation**:
+`fit_one()` now wraps the fit in a retry loop (max 3 attempts, clearing
+the crashed attempt's output first) — not a guaranteed fix, since a small
+number of objects have hit the same crash on all 3 retries.
+
+Other known issues in the r-only fitting pipeline (methodology, not
 sample-specific — see `r_only/code/NOTES_ring_residual_issue.md` for
 detail), relevant background for the multi-band effort too:
 - A mask-radius bug that caused streak-shaped unphysical fits and
   12h-wall-clock non-convergence hangs on some objects — **fixed** (mask
-  tightened from ~14.5" to a fixed 7"). At least one object (J085156) still
-  streaked even at 7" — the interloper was closer than that; refit with a
-  5" mask for that object specifically, chi2/pix dropped 83.6 -> 2.5.
-- The separate intermittent silent deadlock (nested-sampling stage hangs
-  with zero progress, no error) is **root-caused and fixed as of 2026-07-30**.
-  `py-spy` couldn't attach (no ptrace permission on this cluster), so used
-  Python's stdlib `faulthandler` (`SIGUSR1` -> live stack dump, no special
-  permission needed) instead, and found `fit_lens_model.py`'s own JAX
-  version-gate had a real bug: the intent was "only enable JAX on Python
-  >=3.11," but the fallback branch omitted the `use_jax` kwarg entirely,
-  and PyAutoLens's own default for an omitted `use_jax` is `True` — so this
-  Python-3.10 pipeline was silently running an unsupported JAX
-  configuration the whole time, which is the likely cause of the hangs
-  (confirmed 3 different internal stall points across debug attempts, all
-  JAX/Nautilus-internal, all showing ~0% CPU/GPU utilization). **Fix**:
-  explicitly pass `use_jax=False` always on this venv. Verified: worker
-  processes now show genuine 75-79% CPU utilization instead of ~0%.
-  Tried the "do it properly" alternative too (real JAX on the Python-3.11
-  GPU venv) -- that also stalled, so the fix is disabling JAX for this
-  pipeline entirely, not using it correctly instead.
+  tightened from ~14.5" to a fixed 7"). Several objects needed a further
+  tighten to 5" where the interloper sat closer than 7" (e.g. J085156,
+  chi2/pix 83.6 -> 2.5). A systematic residual-pattern classification (peak
+  structure near the mask edge = likely interloper, vs. peak at the lens
+  centre = likely a genuine complex source) was run across all chi2>2
+  objects on 2026-07-31 to route each one to the right fix automatically.
 - A subset of objects show a genuine concentric ring-shaped residual a
   single Sersic-core source profile can't represent (real source
   complexity, not a bug) — a pixelized-source reconstruction
-  (`r_only/code/fit_lens_model_pixelized.py`) is in progress for these.
+  (`r_only/code/fit_lens_model_pixelized.py`) is now running at scale for
+  this class (was a 5-object pilot as of the last push).
+- A small number of objects have a genuine second massive deflector near
+  the primary lens (not just a foreground light source to subtract) — a
+  two-deflector group-scale model is being piloted for these, based on
+  PyAutoLens's own official group-lens example.
 
-This is in-progress work, not a final/published result set.
+This is in-progress work, not a final/published result set. Per-lens
+diagnostic images (`per_lens_diagnostics/`, `raw_fits/`,
+`residual_images/`) are not yet regenerated against the latest fits in
+this push — the `results/` JSONs above are current as of 2026-07-31, the
+diagnostic images will follow in a subsequent push.
