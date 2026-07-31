@@ -97,8 +97,42 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
 
 ## Status (as of this push)
 
-**r-only: 203 / 223 objects fit so far** (92/107 known lenses covered).
-20 objects remain; a backfill batch for these is running now.
+**Update (2026-08-01): r_only/results/ now published as "best-of"
+(parametric vs. pixelized), the actual referee-response arc-S/N result
+computed, and new combined RGB+data+model+residual mosaics added.**
+
+- `r_only/results/` now holds, per object, whichever of the parametric or
+  pixelized-source fit has the lower reduced chi2 (`results_best/` on the
+  cluster side; `source_model` field in each JSON says which one won) —
+  204/223 total, 92/107 known lenses. This supersedes the parametric-only
+  results from the previous push for the ~38 ring-residual objects where
+  pixelized won.
+- `reference_csvs/known_lenses_recovered_vs_missed_snr.csv` — the per-known
+  -lens table behind the referee-response comparison: Grade, recovered/
+  missed, chi2/pix, snr_arc_model, source_model, and a
+  `well_converged_chi2le2` flag.
+- **The actual referee-response result**, restricted to well-converged fits
+  (reduced chi2/pix <= 2, n=46 of the 92 converged known lenses): recovered
+  lenses (n=12) have median arc S/N = 34.2 (IQR 24.9-51.6); missed lenses
+  (n=34) have median arc S/N = 40.0 (IQR 21.3-67.0). Mann-Whitney U p=0.74
+  (p=0.68 after trimming the top/bottom 10% of each group) — missed lenses
+  are *not* systematically fainter; the difference is not significant in
+  either direction. No evidence arc detectability limits the search's
+  recovery rate.
+- `r_only/chi2_bin_mosaics/mosaic_chi2_{good,decent,bad}.png` — new: one
+  big image per chi2 tier (good <=2, decent 2-5, bad >5), one row per
+  object sorted by chi2 ascending, four panels per row (RGB cutout from the
+  KiDS DR4 PNG cache / observed data / model / normalized residual in
+  sigma). This is the "diagnostic images regenerated against the latest
+  fits" follow-up flagged as pending in the previous push.
+- Several fit batches (missing-object backfill, mask-tighten retries, the
+  pixelized-source queue, and a 5-object two-deflector group-model pilot)
+  were still running on the cluster at the time of this push — counts above
+  are a snapshot, expect another push once they land.
+
+**r-only: 204 / 223 objects fit so far** (92/107 known lenses covered).
+Remaining objects mostly hitting an upstream Nautilus numerical-instability
+bug (see below) even through the retry wrapper; backfill still running.
 
 **ugri: 199 / 223 objects fit** (94/107 known lenses covered) — **up from
 0/223 at the last push.** The multiband track was not actually blocked by

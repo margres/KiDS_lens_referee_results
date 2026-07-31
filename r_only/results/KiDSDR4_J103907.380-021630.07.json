@@ -8,5 +8,9 @@
   "log_likelihood": 898.4152474560442,
   "source_effective_radius": 2.7244288819039038,
   "source_re_max": 30.0,
-  "mask_radius": 5.0
+  "mask_radius": 5.0,
+  "source_model": "parametric",
+  "chi2_alternatives": {
+    "parametric": 7.345275105544638
+  }
 }
