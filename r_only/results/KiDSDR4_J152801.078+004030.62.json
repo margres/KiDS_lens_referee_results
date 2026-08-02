@@ -11,6 +11,7 @@
   "mask_radius": 5.0,
   "source_model": "parametric",
   "chi2_alternatives": {
-    "parametric": 7.609697874731473
+    "parametric": 7.609697874731473,
+    "pixelized": 9.15220138913232
   }
 }

@@ -130,6 +130,20 @@ computed, and new combined RGB+data+model+residual mosaics added.**
   were still running on the cluster at the time of this push — counts above
   are a snapshot, expect another push once they land.
 
+**Update (2026-08-02): all in-flight batches finished, results_best now
+205/223 (93/107 known lenses); mosaics carry reference numbers.** The
+2-deflector group model (`fit_lens_model_group.py`, not yet in this
+repo's `code/`) won the best-of comparison for 3 of its 5 pilot objects
+(e.g. J233430: chi2/pix 5.75 -> 1.94, moving it into the "good" tier) —
+`source_model` in a result JSON can now say `group` as well as `parametric`
+/`pixelized`. Each row in `r_only/chi2_bin_mosaics/mosaic_chi2_*.png` is now
+labelled with a `#N` reference number (continuous across all three bin
+images, ordered by chi2/pix ascending); `r_only/chi2_bin_mosaics/
+chi2_bin_id_mapping.txt` maps every number back to its object ID, tier, and
+chi2/pix — use that number to flag a specific object for a fix. The
+recovered-vs-missed arc-S/N numbers above are unchanged by this update (the
+new completions didn't add/remove anything from the chi2<=2 tier).
+
 **r-only: 204 / 223 objects fit so far** (92/107 known lenses covered).
 Remaining objects mostly hitting an upstream Nautilus numerical-instability
 bug (see below) even through the retry wrapper; backfill still running.
