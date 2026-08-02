@@ -27,6 +27,7 @@ inspect fit quality, just read those FITS files directly.
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 import warnings
@@ -43,11 +44,57 @@ import autofit as af
 import autolens as al
 
 PSF_FWHM = 0.7
-ANNULUS_INNER, ANNULUS_OUTER = 0.5, 3.5
+# Fixed [0.5, 3.5]" annulus, superseded 2026-08-02: was independent of each
+# object's fitted einstein_radius (0.3-4.0" across the sample), so for small
+# lenses it swept in unrelated field flux and for large ones the real arc sat
+# past the outer edge entirely. See ANNULUS_INNER_FRAC/OUTER_FRAC below.
+ANNULUS_INNER_FRAC, ANNULUS_OUTER_FRAC, ANNULUS_MIN_WIDTH = 0.6, 1.4, 0.5
+# Point-source masking: a real (but unmodelled) compact source -- a
+# foreground star, AGN core, or interloper -- sitting inside the fit mask
+# contaminates both the mass-model fit and the arc-S/N annulus. Detected via
+# photutils DAOStarFinder (FWHM matched to the known PSF) and excluded with a
+# small circular hole in the fit mask. A central exclusion radius protects
+# the lens galaxy (and any compact arc knot near it) from being flagged.
+POINT_SOURCE_CENTER_EXCLUSION = 1.0  # arcsec; don't flag anything this close to centre
+POINT_SOURCE_MASK_RADIUS = 1.5  # x PSF FWHM, radius of the masked hole per detection
+
+
+def detect_point_sources(data_sub, pixel_scale, noise_sigma, center_exclusion=POINT_SOURCE_CENTER_EXCLUSION):
+    """Return [(x_pix, y_pix), ...] centroids of compact point-like sources
+    in data_sub, excluding anything within center_exclusion arcsec of the
+    cutout centre (the lens galaxy)."""
+    from photutils.detection import DAOStarFinder
+    psf_fwhm_pix = PSF_FWHM / pixel_scale
+    finder = DAOStarFinder(fwhm=psf_fwhm_pix, threshold=8 * noise_sigma,
+                            sharplo=0.3, sharphi=1.0, roundlo=-0.7, roundhi=0.7)
+    sources = finder(data_sub)
+    if sources is None:
+        return []
+    ny, nx = data_sub.shape
+    cy, cx = ny / 2, nx / 2
+    out = []
+    for s in sources:
+        r_arcsec = np.hypot(s['xcentroid'] - cx, s['ycentroid'] - cy) * pixel_scale
+        if r_arcsec > center_exclusion:
+            out.append((float(s['xcentroid']), float(s['ycentroid'])))
+    return out
+
+
+def apply_point_source_holes(mask_bool, centers_xy, pixel_scale):
+    """mask_bool: True = masked out (PyAutoLens Mask2D convention). Adds a
+    small circular True (excluded) region at each detected point source."""
+    ny, nx = mask_bool.shape
+    yy, xx = np.mgrid[0:ny, 0:nx]
+    hole_radius_pix = POINT_SOURCE_MASK_RADIUS * (PSF_FWHM / pixel_scale)
+    out = mask_bool.copy()
+    for x, y in centers_xy:
+        out |= (np.hypot(xx - x, yy - y) <= hole_radius_pix)
+    return out
 
 
 def fit_one(fits_path, obj_id, n_live=150, number_of_cores=1, path_prefix='hpc_lens_models',
-            source_re_max=0.4, mask_radius=7.0):
+            source_re_max=0.4, mask_radius=7.0, n_networks=4, use_jax_vmap=True,
+            mask_point_sources=False, source_re_prior='uncapped'):
     with fits.open(fits_path) as hdul:
         data = hdul[0].data.astype(np.float64)
         header = hdul[0].header
@@ -87,6 +134,13 @@ def fit_one(fits_path, obj_id, n_live=150, number_of_cores=1, path_prefix='hpc_l
     # arc, producing streak-shaped unphysical solutions. 7" keeps ~1.75x the
     # max einstein_radius prior as margin while excluding the field.
     mask = al.Mask2D.circular(shape_native=dataset.shape_native, pixel_scales=pixel_scale, radius=mask_radius)
+    if mask_point_sources:
+        point_sources = detect_point_sources(data_sub, pixel_scale, noise_sigma)
+        if point_sources:
+            new_bool = apply_point_source_holes(np.asarray(mask), point_sources, pixel_scale)
+            mask = al.Mask2D(mask=new_bool, pixel_scales=pixel_scale)
+            print(f"[mask_point_sources] {obj_id}: masked {len(point_sources)} detected point source(s) "
+                  f"at {point_sources}", flush=True)
     dataset = dataset.apply_mask(mask=mask)
 
     lens_bulge = af.Model(al.lp_linear.SersicCore)
@@ -99,7 +153,22 @@ def fit_one(fits_path, obj_id, n_live=150, number_of_cores=1, path_prefix='hpc_l
     source_bulge = af.Model(al.lp_linear.SersicCore)
     source_bulge.centre.centre_0 = af.GaussianPrior(mean=0.0, sigma=0.3)
     source_bulge.centre.centre_1 = af.GaussianPrior(mean=0.0, sigma=0.3)
-    source_bulge.effective_radius = af.UniformPrior(lower_limit=0.02, upper_limit=source_re_max)
+    if source_re_prior == 'tight':
+        # Found 2026-08-02: the uncapped UniformPrior(0.02, 30) lets the
+        # sampler wander to either extreme for a large fraction of the
+        # sample -- 35% of parametric fits landed at effective_radius > 2"
+        # (a diffuse blob mimicking the whole field, not a compact arc) and
+        # 8.6% collapsed to < 0.05" (a point source, unable to reproduce
+        # extended/multiply-imaged structure). Both extremes fit noticeably
+        # worse on average than the physically-plausible middle group. This
+        # confirms, at full-sample scale, the single-object "streak" risk
+        # flagged but left unresolved on 2026-07-25. Recentered on a
+        # physically motivated compact-source scale (user-specified, not a
+        # guess): GaussianPrior(mean=0.2, sigma=0.15) truncated to [0.02, 0.8].
+        source_bulge.effective_radius = af.TruncatedGaussianPrior(
+            mean=0.2, sigma=0.15, lower_limit=0.02, upper_limit=0.8)
+    else:
+        source_bulge.effective_radius = af.UniformPrior(lower_limit=0.02, upper_limit=source_re_max)
     source_galaxy = af.Model(al.Galaxy, redshift=1.0, bulge=source_bulge)
 
     model = af.Collection(galaxies=af.Collection(lens=lens_galaxy, source=source_galaxy))
@@ -116,12 +185,42 @@ def fit_one(fits_path, obj_id, n_live=150, number_of_cores=1, path_prefix='hpc_l
             _use_jax = True
         except Exception:
             _use_jax = False
-    analysis = al.AnalysisImaging(dataset=dataset, use_jax=_use_jax) if _use_jax \
-        else al.AnalysisImaging(dataset=dataset)
-    search = af.Nautilus(path_prefix=path_prefix, name=obj_id, unique_tag=obj_id, n_live=n_live, number_of_cores=number_of_cores)
+    # BUG (found 2026-07-30): al.AnalysisImaging's own default for the
+    # use_jax kwarg is True when omitted -- the previous version of this
+    # line omitted it entirely in the else branch, silently running with
+    # JAX enabled on this Python 3.10 venv despite the version gate above
+    # concluding it shouldn't be. Must pass use_jax=_use_jax explicitly in
+    # both branches.
+    analysis = al.AnalysisImaging(dataset=dataset, use_jax=_use_jax)
 
+    # RETRY-ON-CRASH (added 2026-07-30): Nautilus's own ellipsoid-splitting
+    # bound computation (nautilus/bounds/basic.py:minimum_volume_enclosing_ellipsoid)
+    # has a rare, seed-dependent numerical-stability failure -- confirmed via
+    # a live-checkpoint inspection that the live points involved had NaN
+    # physical parameters with spuriously high log-likelihoods, causing the
+    # point cloud's covariance to go singular. This is a known upstream bug
+    # class (nautilus issues #34/#35, "matrix not positive definite" during
+    # ellipsoid fitting; not fully fixed as of nautilus 1.0.6, no config knob
+    # avoids it). The upstream author's own recommendation for this failure
+    # is simply to retry with a different random seed -- af.Nautilus doesn't
+    # fix a seed here, so a fresh search object naturally gets a new one.
+    # Retrying is the appropriate handling for a confirmed third-party
+    # numerical instability, not a symptom patch: the root cause lives inside
+    # nautilus's own bound-fitting algorithm, well outside this pipeline.
+    max_attempts = 3
     t0 = time.time()
-    result = search.fit(model=model, analysis=analysis)
+    for attempt in range(1, max_attempts + 1):
+        search = af.Nautilus(path_prefix=path_prefix, name=obj_id, unique_tag=obj_id, n_live=n_live, number_of_cores=number_of_cores, n_networks=n_networks, use_jax_vmap=use_jax_vmap)
+        try:
+            result = search.fit(model=model, analysis=analysis)
+            break
+        except np.linalg.LinAlgError:
+            if attempt == max_attempts:
+                raise
+            print(f"[retry] Nautilus hit a singular-matrix crash on {obj_id} "
+                  f"(attempt {attempt}/{max_attempts}); clearing output dir and "
+                  f"retrying with a fresh search.", flush=True)
+            shutil.rmtree(search.paths.output_path, ignore_errors=True)
     dt = time.time() - t0
 
     fit = result.max_log_likelihood_fit
@@ -131,16 +230,19 @@ def fit_one(fits_path, obj_id, n_live=150, number_of_cores=1, path_prefix='hpc_l
     source_subtracted_image = np.asarray(subtracted_imgs[1].native)
     residual = np.asarray(fit.data.native) - np.asarray(fit.model_data.native)
 
+    einstein_radius = result.instance.galaxies.lens.mass.einstein_radius
+
     fny, fnx = source_sn_map.shape
     fyy, fxx = np.mgrid[0:fny, 0:fnx]
     fcy, fcx = fny / 2, fnx / 2
     r_arcsec = np.hypot(fyy - fcy, fxx - fcx) * pixel_scale
-    region = (r_arcsec > ANNULUS_INNER) & (r_arcsec < ANNULUS_OUTER)
+    annulus_inner = max(0.1, ANNULUS_INNER_FRAC * einstein_radius)
+    annulus_outer = max(annulus_inner + ANNULUS_MIN_WIDTH, ANNULUS_OUTER_FRAC * einstein_radius)
+    region = (r_arcsec > annulus_inner) & (r_arcsec < annulus_outer)
 
     snr_model = source_subtracted_image[region].sum() / (noise_sigma * np.sqrt(region.sum()))
     snr_peak = np.nanmax(source_sn_map[region])
     chi2 = np.mean((residual[region] / noise_sigma) ** 2)
-    einstein_radius = result.instance.galaxies.lens.mass.einstein_radius
     # Source Sersic effective radius (arcsec). Recorded so we can tell whether
     # the fit is railing against source_re_max -- a binding cap means the source
     # size (and hence the arc-S/N derived from the source-subtracted image) is
@@ -154,6 +256,10 @@ def fit_one(fits_path, obj_id, n_live=150, number_of_cores=1, path_prefix='hpc_l
         'source_effective_radius': source_effective_radius,
         'source_re_max': source_re_max,
         'mask_radius': mask_radius,
+        'annulus_inner_arcsec': annulus_inner,
+        'annulus_outer_arcsec': annulus_outer,
+        'mask_point_sources': mask_point_sources,
+        'source_re_prior': source_re_prior,
     }
 
 
@@ -177,13 +283,26 @@ if __name__ == '__main__':
                              '(~14.5"), which let an uncapped source profile reach field '
                              'interlopers near the cutout edge and fit them as streak-shaped '
                              'unphysical arcs.')
+    parser.add_argument('--mask_point_sources', action='store_true',
+                        help='Auto-detect compact point-like sources (photutils DAOStarFinder, '
+                             'excluding a 1.0" radius around the cutout centre) and add a small '
+                             'circular hole in the fit mask at each detection, so an unmodelled '
+                             'foreground star/interloper does not contaminate the mass-model fit '
+                             'or the arc-S/N annulus.')
+    parser.add_argument('--source_re_prior', choices=['uncapped', 'tight'], default='uncapped',
+                        help='"uncapped" (default, unchanged): UniformPrior(0.02, source_re_max). '
+                             '"tight": TruncatedGaussianPrior(mean=0.2, sigma=0.15, [0.02, 0.8]) -- '
+                             'found 2026-08-02 that the uncapped prior lets ~44%% of parametric fits '
+                             'land at an implausible source size (either a diffuse >2" blob or a '
+                             'collapsed <0.05" point), both fitting worse on average.')
     args = parser.parse_args()
 
     os.makedirs(args.results_dir, exist_ok=True)
     fits_path = os.path.join(args.cutout_dir, f'{args.dataset}.fits')
     result = fit_one(fits_path, args.dataset, n_live=args.n_live,
                      number_of_cores=args.number_of_cores, source_re_max=args.source_re_max,
-                     mask_radius=args.mask_radius)
+                     mask_radius=args.mask_radius, mask_point_sources=args.mask_point_sources,
+                     source_re_prior=args.source_re_prior)
     out_name = f'{args.dataset}{args.results_suffix}.json'
     with open(os.path.join(args.results_dir, out_name), 'w') as f:
         json.dump(result, f, indent=2)

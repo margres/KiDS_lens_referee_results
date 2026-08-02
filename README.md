@@ -97,6 +97,49 @@ lenses) — needs fits for the full 107 to check, in progress (see Status).
 
 ## Status (as of this push)
 
+**Update (2026-08-02): two real methodology bugs found via user visual QA on
+the numbered chi2-bin mosaics, both fixed and rolled out.**
+
+1. **Annulus bug**: `chi2_per_pix` and the arc-S/N were both computed inside
+   a *fixed* `[0.5,3.5]"` annulus, independent of each object's fitted
+   Einstein radius (0.3-4.0" across the sample) — biasing not just the S/N
+   number but *which fits counted as well-converged*. Fixed: annulus now
+   scales `[0.6, 1.4] x einstein_radius` (min width 0.5"), recomputed for
+   every completed fit directly from saved outputs (`galaxy_images.fits` +
+   `dataset.fits` + `fit.fits`), no re-fitting needed. This flips the
+   recovered-vs-missed S/N direction (still not significant either way) —
+   the result below is reframed as a straightforward null result rather
+   than "missed lenses are marginally brighter, contrary to expectation."
+2. **Source-size bug**: `source_effective_radius` (background source size)
+   was bimodal across ~44% of all parametric fits under the old uncapped
+   `Uniform(0.02", 30")` prior — 35% landed at an implausible >2" diffuse
+   blob (up to 30"), 8.6% collapsed to <0.05" (a point source unable to
+   reproduce extended arc structure). Both extremes fit measurably worse on
+   average. New `--source_re_prior tight` option in `fit_lens_model.py`
+   (`TruncatedGaussianPrior(mean=0.2", sigma=0.15", [0.02",0.8"])`, a
+   physically-motivated compact-source scale) was tested on every object
+   showing this pathology; **kept only where it genuinely improved chi2**
+   (roughly half the time — the rest reverted to the original fit, since a
+   "more physical" source size doesn't guarantee a better fit). Same
+   before/after comparison-and-revert policy applied to a point-source
+   auto-masking feature (`--mask_point_sources`, photutils DAOStarFinder)
+   for objects with a real unmodelled contaminant in the fit mask.
+- `r_only/chi2_bin_mosaics/refit_review_mosaic.png` — new: RGB + new-attempt
+  r-band data/model/residual for every object touched by these two fixes,
+  labelled with old/new chi2 and the automatic keep/revert decision, using
+  the *same* `#N` reference numbers as `chi2_bin_id_mapping.txt`.
+- Result counts moved to 205/223 (93/107 known lenses); "good" tier grew
+  111->119 objects.  **Referee-response comparison (chi2/pix<=2, n=46 of 93
+  converged known lenses)**: recovered (n=15) median arc S/N=38.7 (IQR
+  18.6-60.3); missed (n=31) median arc S/N=32.0 (IQR 19.0-56.4).
+  Mann-Whitney p=0.74 (p=0.66 after trimming top/bottom 10% of each group)
+  — no significant difference in either direction; the sign of the small
+  residual gap is itself sensitive to reasonable methodology choices,
+  underscoring this is a genuine null result.
+- Not all fit batches from this fix are finished yet (the decent-tier
+  extension of the source-size-prior test was still running as of this
+  push) — expect another update.
+
 **Update (2026-08-01): r_only/results/ now published as "best-of"
 (parametric vs. pixelized), the actual referee-response arc-S/N result
 computed, and new combined RGB+data+model+residual mosaics added.**

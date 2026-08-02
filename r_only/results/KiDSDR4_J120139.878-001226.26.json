@@ -2,15 +2,19 @@
   "ID": "KiDSDR4_J120139.878-001226.26",
   "time_s": 1409.0312461853027,
   "einstein_radius": 0.757324801757269,
-  "snr_arc_model": 375.2234523904937,
+  "snr_arc_model": 455.10534247290053,
   "snr_arc_peak": 54.68189828040629,
-  "chi2_per_pix": 2.308676414248796,
+  "chi2_per_pix": 2.683421996971802,
   "log_likelihood": 2723.4084745518267,
   "source_effective_radius": 2.5820091702528543,
   "source_re_max": 30.0,
   "mask_radius": 5.0,
+  "snr_arc_model_fixed_annulus_orig": 375.2234523904937,
+  "chi2_per_pix_fixed_annulus_orig": 2.308676414248796,
+  "annulus_inner_arcsec": 0.4543948810543614,
+  "annulus_outer_arcsec": 1.0602547224601766,
   "source_model": "parametric",
   "chi2_alternatives": {
-    "parametric": 2.308676414248796
+    "parametric": 2.683421996971802
   }
 }
